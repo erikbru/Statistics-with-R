@@ -1,0 +1,301 @@
+---
+title: "Bayesian modeling and prediction for movies by Erik"
+output: 
+  html_document: 
+    fig_height: 4
+    highlight: pygments
+    theme: spacelab
+---
+
+## Setup
+
+### Load packages
+
+```{r load-packages, message = FALSE}
+library(ggplot2)
+library(dplyr)
+library(statsr)
+library(BAS)
+library(tidyr)
+library(GGally)
+```
+
+### Load data
+
+
+
+```{r load-data}
+load("C:/Users/erikb/Downloads/R/Duke/R fourth peer/moviesErik.RData")
+```
+
+
+
+* * *
+
+## Part 1: Data
+The Movies dataset is a data set that is comprised of 651 randomly sampled movies produced and released before 2016. The datase contains 32 variables. Some of these variables are only there for informational purposes and were not included in this analysis.
+
+It is an observational study and an experiment using random assignment was not used. Therefore, we cannot establish causality. The study sampling is random, however, so the results are generalizable to movies produced and released before 2016 in the US.
+
+* * *
+
+## Part 2: Data manipulation
+Our instructions are: The specific modeling task you need to complete is as follows: Develop a Bayesian regression model to predict audience_score from the following explanatory variables. Note that some of these variables are in the original dataset provided, and others are new variables you will need to construct in the data manipulation section using the mutate function in dplyr:
+
+    feature_film: "yes" if title_type is Feature Film, "no" otherwise
+    drama: "yes" if genre is Drama, "no" otherwise
+    runtime
+    mpaa_rating_R: "yes" if mpaa_rating is R, "no" otherwise
+    thtr_rel_year
+    oscar_season: "yes" if movie is released in November, October, or December (based on thtr_rel_month), "no" otherwise
+    summer_season: "yes" if movie is released in May, June, July, or August (based on thtr_rel_month), "no" otherwise
+    imdb_rating
+    imdb_num_votes
+    critics_score
+    best_pic_nom
+    best_pic_win
+    best_actor_win
+    best_actress_win
+    best_dir_win
+    top200_box
+
+First, I want to have a look at the variables that are already in the original dataset. It turns out that the ones given without instructions to create them are indeed in the dataset.
+
+```{r}
+names(movies)
+```
+
+So, all I need to do is create the 5 new variables as described. Since I want to keep a copy of the original data, I am going to make a copy first.
+
+```{r}
+mov1 <- movies
+```
+
+Below, I am creating the feature_film variable. I eventually end up with a factorial variable with 2 levels (and no NAs).
+
+```{r}
+mov1 <- mutate(mov1, feature_film=ifelse(title_type=="Feature Film","yes","no"))
+mov1$feature_film <- as.factor(mov1$feature_film)
+str(mov1$feature_film)
+summary(mov1$feature_film)
+```
+
+Very similarly, I am creating the Drama variable below.
+
+```{r}
+mov1 <- mutate(mov1, drama=ifelse(genre=="Drama","yes","no"))
+mov1$drama <- as.factor(mov1$drama)
+str(mov1$drama)
+summary(mov1$drama)
+```
+
+Since the mpaa_rating_R is also just a yes/no check of an existing variable, the creation is also similar to how I created the first 2 new variables.
+
+```{r}
+mov1 <- mutate(mov1, mpaa_rating_R=ifelse(mpaa_rating=="R", "yes", "no"))
+mov1$mpaa_rating_R <- as.factor(mov1$mpaa_rating_R)
+str(mov1$mpaa_rating_R)
+summary(mov1$mpaa_rating_R)
+```
+
+The variables oscar_season and summer_season are just slightly different as they are made by selecting multiple values (months) from existing variables. I am creating them below in a very similar way.
+
+```{r}
+mov1 <- mutate(mov1, oscar_season=ifelse(thtr_rel_month %in% c(10, 11, 12),"yes","no"))
+mov1$oscar_season <- as.factor(mov1$oscar_season)
+str(mov1$oscar_season)
+summary(mov1$oscar_season)
+```
+
+```{r}
+mov1 <- mutate(mov1, summer_season=ifelse(thtr_rel_month %in% c(5, 6, 7, 8),"yes","no"))
+mov1$summer_season <- as.factor(mov1$summer_season)
+str(mov1$summer_season)
+summary(mov1$summer_season)
+```
+
+I prefer to start my analysis with a "clean" dataset in which I only keep the 16 explanatory variables listed in the instruction.In addition, I of course need to keep the response variable (audience_score).
+
+```{r}
+mov2 <- select(mov1, audience_score, feature_film, drama, mpaa_rating_R, oscar_season, summer_season, runtime, thtr_rel_year,  imdb_rating, imdb_num_votes, critics_score, best_pic_nom, best_pic_win, best_actor_win, best_actress_win, best_dir_win, top200_box)
+str(mov2)
+```
+
+This also gives me the opportunity to only omit NAs from variables that I am actually going to use in my model (hence avoiding "losing" observations with NAs in variables that are not selected anyway). As you can see below, only Runtime contains 1 NA. This means that I have a clean dataset consisting of 650 movies after omitting this one.
+
+```{r}
+summary(mov2)
+```
+
+```{r}
+mov2 <- na.omit(mov2)
+dim(mov2)
+```
+
+
+* * *
+
+## Part 3: Exploratory data analysis
+
+First, I want to get a good feeling about the response variable, the audience_score.
+
+```{r}
+ggplot(data=mov2, aes(x=audience_score))+
+  geom_histogram(binwidth = 5)
+summary(mov2$audience_score)
+```
+
+As you can see, audience score is left skewed, with observations between 11 and 97, with the mean at 62.
+
+I also noticed that 11 out of the 16 explantory variables are factorial yes/no variables. As it seemed ideal to me to visualize these by grouping boxplots horizontally, I have been looking for a way to do this. It turns out that this can be done using the tidyr package(the gather function). Below, I am doing this for the new variables that we had to create (all yes/no), and also for the group of oscar related variables (+top200_box)
+
+```{r}
+group1 <- mov2 %>%
+  gather('variable_name', 'value', feature_film:summer_season)
+ggplot(data=group1,aes(x=variable_name, y= audience_score,fill=value))+geom_boxplot()
+```
+
+```{r}
+group2 <- mov2 %>%
+  gather('variable_name', 'value', best_pic_nom:top200_box)
+ggplot(data=group2,aes(x=variable_name, y= audience_score,fill=value))+geom_boxplot()
+```
+
+Of these yes/no variables, some of the IQR boxes for yes and no are not even touching each other (feature_film, best_pic_win, best_pic_nom). As scores on those variables lead to very different audience_scores, they seem good predictors for audience scores.
+
+As audience score in reality is the response variable on rottentomatoes, the rottentomatoes critics score seems a very important numeric predictor. As you can see below, there seems to be a linear relation between those variables indeed.
+
+```{r}
+ggplot(data=mov2, aes(x=critics_score, y=audience_score))+
+  geom_jitter()+
+geom_smooth(method = "lm")
+```
+
+I also wanted to check if the residuals of the simple linear model would lead to normally distributed residuals. This is the case, so I don't need a log transformation.
+
+```{r}
+lm1=lm(audience_score ~ critics_score, data=mov2)
+hist(lm1$residuals)
+```
+
+In order to get a feel for all numeric explanatory variables at ones, I composed a correlation plot using ggpairs. While the correlation between audience score and critics score is quite strong indeed (0.7), I am also noticing that the correlation with the imdb_rating is even stronger. Therefore, both critics_score and imdb_rating seem good predictors. However, there seems to be collinearity between them (correlation 0.765). This is something to be aware of. The final model should ideally only use one of those 2 to avoid collenearity.
+
+```{r}
+group3 <- select(mov2, audience_score, critics_score, runtime, imdb_rating, imdb_num_votes, thtr_rel_year)
+```
+```{r}
+ggpairs(data = group3)
+```
+
+As imdb_rating shows an even higher correlation audience_score, I also wanted to check if the simple linear model with imdb_rating would lead to skewed residuals.
+
+```{r}
+lm2=lm(audience_score ~ imdb_rating, data=mov2)
+hist(lm2$residuals)
+```
+
+.....and they actually do! Therefore, I eventually need to work with log of the audience_score anyway. As you can see, the residuals are now normally distributed.
+
+```{r}
+mov3 <- mov2
+mov3$laudience_score=log(mov3$audience_score)
+```
+
+```{r}
+lm3=lm(laudience_score ~ imdb_rating, data=mov3)
+hist(lm3$residuals)
+```
+* * *
+
+
+
+## Part 4: Modeling
+
+I am using BMA (Bayesian Model Averaging) with a BIC prior (Bayesian Information Criterion), and my log of audience score as my response variable as I found out the residuals of the linear model with imdb_rating were not normally distributed without logging audience_score. As I don't have have any idea about modelprobabilities, I am using the uniform distribution.
+
+```{r}
+bayfull <- bas.lm(data=mov3, laudience_score ~ .-audience_score, prior = 'BIC', modelprior = uniform())
+summary(bayfull)
+```
+
+The most probable model (see also image below), contains the intercept, imdb_rating, and runtime. The posterior probability of 0.13 is a lot higher than the prior probability of the uniform distribution (as there are 2^16 possible models). The first 4 model all contain only numerical explanatory variables, from the 5th on, also categorical variables such as oscar_season are included.
+
+
+```{r}
+image(bayfull, rotate=F)
+```
+
+The posterior mean, sd, and the marginal posterior inclusion probability of the variable are given below (of course, the mean and sd are related to the log(audience) instead of the audience_score). The intercept and imdb_rating are always included. R actually took the natural log (ln) of the audience scores. Therefore, the posterior mean of the intercept is actually e^(4.066)=58. 
+
+```{r}
+coef_bayfull=coefficients(bayfull)
+coef_bayfull
+```
+
+
+```{r}
+plot(bayfull, which=4, ask=FALSE)
+```
+
+
+I also have to check the residuals. Although they are scattered reasonably around 0, the variance is not contstant and decreased. This is something that is undesirable, and would need to be investigated further in the real world. There are also 3 outliers that should be investigated (the ones with numbers).
+
+```{r}
+plot(bayfull, which=1, ask=FALSE)
+```
+
+The best model (posterior probability 13%), includes only the intercept, runtime, and imdb_rating. The critics_score is also included quite often. The posterior distributions of the regression coefficients are shown below. The vertical line at 0 on the X axis indicates the posterior probability of the coefficient being zero (not included). 
+
+```{r}
+par(mfrow=c(2,2))
+plot(coefficients(bayfull), subset=c(1,7,9,11), ask=FALSE)
+```
+
+
+* * *
+
+## Part 5: Prediction
+
+I chose Elle from director Paul Verhoeven. At the moment, Isabelle Huppert is nominated for best actress win, but since the outcome is not known "best actress win" is considered a "no". 
+
+
+```{r}
+newmovie <- data.frame(runtime=130,
+                         thtr_rel_year=2016,
+                         imdb_rating=7.3,
+                         imdb_num_votes=24403,
+                         critics_score=89,
+                         laudience_score=log(75),
+                         audience_score=75,
+                         best_pic_nom="no",
+                         best_pic_win="no",
+                         best_actor_win="no",
+                         best_actress_win="no",
+                         best_dir_win="no",
+                         top200_box="no",
+                         feature_film="yes",
+                         drama="yes",
+                         mpaa_rating_R="yes",
+                         oscar_season="yes",
+                         summer_season="no")
+mov3<-rbind(mov3,newmovie)
+newmovie<-tail(mov3,1)
+```
+
+As the posterior probabilities of the top models is not very high (most likely model 13%, top5 roughly 35% cumulative), I have chose to average over the top 15 models.
+
+```{r}
+BMA_newmovie <- predict(bayfull, newmovie, estimator="BMA", top = 15)
+BMA_newmovie$fit
+exp(BMA_newmovie$Ybma)
+```
+
+As I chose to work with the log of audience score, now is the time to convert it back in order to get a normalized prediction. As you can see, the predicted audience score of 74,2 is actually really close to the real score of 75 on rottentomatoes.
+
+* * *
+
+## Part 6: Conclusion
+
+I found it a hard assignment. However, I do like the BMA approach, which enables me to average over the top15 models (with a prediction that is surprisingly close to the real score ;-).
+
+To me, 2 questions remain. First of all, I personally see imdb_rating more as an "alternative" response variable to audience_score, as it is the imdb variant of audience score. If we were not instructed to include it, I would have left it out (which would probably lead to inclusion of other interesting variables in the most probable model). In addition, I would like to find out what we can do about the variance that is not constant. It violates the validity of the model, but hopefully there are ways to overcome that.

@@ -1,0 +1,208 @@
+---
+title: "Modeling and prediction for movies by Erik"
+output: 
+  html_document: 
+    fig_height: 4
+    highlight: pygments
+    theme: spacelab
+---
+
+## Setup
+
+### Load packages
+
+```{r load-packages, message = FALSE}
+library(ggplot2)
+library(dplyr)
+library(statsr)
+library(knitr)
+library(GGally)
+```
+
+### Load data
+
+```{r load-data}
+load("C:/Users/erikb/Downloads/R/Duke/R third peer/movies.RData")
+```
+
+
+* * *
+
+## Part 1: Data
+
+The Movies dataset is a data set that is comprised of 651 randomly sampled movies produced and released before 2016. The datase contains 32 variables. Some of these variables are only there for informational purposes and were not included in this analysis.
+
+It is an observational study and an experiment using random assignment was not used. Therefore, we cannot establish causality. The study sampling is random, however, so the results are generalizable to movies produced and released before 2016 in the US. 
+* * *
+
+## Part 2: Research question
+
+The analysis in this document is intended to answer the following research question: **Is there an association between audience score (how much do people like a movie?) and other variables in the movies database?**
+
+I personably believe that a lot of subjective factors may play a role. Would a viewer rate a movie higher than he likes because critics say it is a great movie? Does personal preference play a role (I don't like horror ;-))?
+
+* * *
+
+## Part 3: Exploratory data analysis
+
+In the instructions, the following is mentioned:
+Regardless of whether you are doing forward selection or backward elimination, you should decide on a set of variables that will be considered for the model. These do not have to include all of the variables in the dataset. In fact, some variables might be completely inappropriate to consider (such as URL of the movie) or clearly not informative (such as the actor variables with so many levels). You should first go through the dataset and identify the variable you want to consider, and provide a justification for including those (or excluding the others).
+
+So the first thing I want to do is to select a set of variables that I want to consider. All variables are listed below.
+
+```{r}
+names(movies)
+```
+
+
+As already mentioned, actor1-actor5 are not informative, and the rt_url should also not be considered. My next step is to look at the codebook provided. First of all, I will not consider critics_rating as these seem to be calculated from the critics_score. This would introduce unwanted collinearity. However, the numeric critics_score seems great predictors to me, and hence I want to keep it.
+
+Regarding Oscars, I am focusing on the pictures themselves, and therefore only keep best_pic_nom (nominated for Oscar Yes/No), and best_pic_win (Won Oscar for Best Picture, Yes/No). This gives me 2 categorical variables that I want to consider.
+
+For learing purposes, I would also like to keep a categorical variable with more than 2 levels, and Genre seems one to me that could be relevant. In addition, I can imagine that Runtime could also make a difference. This give me 6 explanatory variables that I want to consider in my model.
+
+Besides those 5 explanatory variables, I also need to keep the Title,and the audience_score itself. I have also looked at the imdb_num_votes. As the minimum number of votes is 180, I assume that that is enough to keep all movies (so no need to exclude movies with very few votes).
+
+The summary statistics of this selection of variables is shown below. I will comment on each variable further at the required visualizations, but it easily can be seen that the median and mean of the audience scores is bit higher than the crtitics scores, drama account for almost half of the movies' genres, very few movies have been nominated or won an Oscar, and the median and mean of the imdb ratings is around 6.5.
+
+```{r}
+movies2 <- select(movies, title, audience_score, genre, runtime, critics_score, best_pic_nom, best_pic_win)
+summary(movies2)
+```
+
+As you can see, there is only one NA in this dataframe (a runtime), which I will omit. This leaves 650 out of 651 movies in the database.
+
+```{r}
+movies2 <- na.omit(movies2)
+dim(movies2)
+```
+
+We also have to visualize the explanatory variables. Below you can see that very few movies had oscar nominations and wins. I am curious to see what effect that has on our model.
+
+```{r}
+layout(matrix(c(1,2),1,2, byrow = TRUE))
+barplot(summary(movies2$best_pic_nom),main="Figure 1: Oscar Nomination (Yes/No)?")
+barplot(summary(movies2$best_pic_win), main="Figure 2: Oscar Won (Yes/No)?")
+```
+
+The Genre actually consists of many categories, with Drama being by far the largest.
+
+```{r}
+ggplot(data = movies2, aes(x = genre,)) +
+  geom_bar()+ theme(axis.text.x = element_text(angle = 25, hjust = 1))+
+  ggtitle("Figure 3: Genre of the movie")
+```
+
+For the numerical variables, I chose to vizualize using histograms. As you can see, the runtimes seem reasonably normally distributed, with some skew to the right. The critics scores don't seem normally distributed at all, with highest frequency in the 90-100 category, and the audience scores are clearly left skewed.
+
+```{r}
+hist(movies2$runtime, xlab="Runtime",main="Histogram of movies runtime")
+hist(movies2$critics_score, xlab="Score", main = "Histogram of Critics scores")
+hist(movies2$audience_score, xlab="Score", main = "Histogram of Audience scores")
+```
+
+Since I have 2 numerical explanatory variables I also want to check if these 2 are not highly correlated to avoid collinearity. I turns out that they are not, so I can use them both in my model.
+
+```{r}
+corMatrix <- cor(movies2$runtime, movies2$critics_score)
+corMatrix
+```
+
+
+* * *
+
+## Part 4: Modeling
+
+My multiple linear regression model will be to predict the numerical score of the audience, based on the explanatory variables that I have selected and described in the explanatory data analysis. As I want to do backward selection, I will start with a full model (including all selected explanatory variables), and want to eliminate one variable at a time until the ideal model is reached.
+
+```{r}
+m1 <- lm(formula=audience_score ~ critics_score + genre + runtime + best_pic_nom + best_pic_win, data=movies2)
+summary(m1)
+```
+
+The very high F value, and associated low p-value tell us that the model as a whole is significant. The R-squared value of .53 means that 53% of the variability in the audience-scores can be explained by this model. As I have chosen to do backward selection based on p-values (so not the option based on the Adjusted R-squared), I will drop the variable with the highest p-value until all remaining variables are significant (at an alpha of 0.05). The highest p-value in the full model is best_pic_win. So I will drop this variable first.
+
+```{r}
+m2 <- lm(formula=audience_score ~ critics_score + genre + runtime + best_pic_nom, data=movies2)
+summary(m2)
+```
+
+Of the remaining variables, GenreComedy has the highest p-value. However, since there are other genres with very small p-values (especially GenreDocumentary), Genre need to stay in the model. Runtime, however, is also still in the model with a p-value of 0.07 (so >0.05). In the model below, I am getting rid of it.
+
+```{r}
+m3 <- lm(formula=audience_score ~ critics_score + genre + best_pic_nom, data=movies2)
+summary(m3)
+```
+
+Now, I have a model with only 3 explanatory variables, which are all significant. The adjusted R-squared is about the same as the original model, and the R-squared has hardly gone down. Now, all I have to do is check the conditions. As we prefer the simplest best model, I have now reaches my parsimonial model.
+
+**Linearity**
+
+Since critics score is the only numerical explantory variable left in the model, I have to check if there is a linear association. Since there is a random scatter around 0 the linearity condition seems ok.
+```{r}
+plot(m3$residuals~movies2$critics_score,xlab="Critics Score",ylab="Residuals",main="Residuals versus Critics Score")
+```
+
+**Nearly normal residuals**
+
+As the histogram of residuals seems normally distributions around a mean of 0, and the normal probability plot also follows a straight line, this condition is also met.
+```{r}
+hist(m3$residuals)
+qqnorm(m3$residuals)
+qqline(m3$residuals)
+```
+
+**constant variability of residuals**
+
+There should not be a "fan" shape in this graph.This is probably a little bit of a concern, as the "range" gets narrower in the range of the higher predictions.
+
+```{r}
+plot(m3$residuals~m3$fitted,main="Residuals versus fitted")
+abline(0,0)
+```
+**independence of residuals**
+
+As you can see, there is nothing special to see when plotting the residuals against the index. So this condition is met.
+
+```{r}
+plot(m3$residuals)
+```
+
+
+* * *
+
+## Part 5: Prediction
+
+I have looked up data about 2 2016 movies. I found the critics scores on rottentomatoes, and I checked imdb.com for the Genres. Oscar nominations can be found everywhere.
+
+Moonlight (2016). Genre: drama, Critics score: 98%, Oscar nomination for best picture: Yes.
+
+```{r}
+moonlight <- data.frame(title="Moonlight", critics_score=98, genre="Drama", best_pic_nom="yes")
+moonlight
+```
+
+```{r}
+predict(m3, moonlight, interval = "confidence", level = 0.95)
+```
+
+We are 95% confidence that, all else being equal, the predicted audience score for the movie "Moonlight" will be between 84.8 and 96.6, on average.
+
+Just to see the effects of some very different values, I also did another movie.
+Sing (2016). Genre: comedy, Crtitics score: 73%, Oscar nomination: No.
+```{r}
+sing <- data.frame(title="Sing", critics_score=73, genre="Comedy", best_pic_nom="no")
+sing
+```
+
+```{r}
+predict(m3, sing, interval = "confidence", level = 0.95)
+```
+
+We are 95% confidence that, all else being equal, the predicted audience score for the movie "Sing" will be between 63.4 and 69.9, on average.
+* * *
+
+## Part 6: Conclusion
+I find it very interesting to see what you can do with multiple regression. When I was making the model, I all of a sudden realized that I ended up with only 1 numerical variable. Although this one is a very significant, and it is a nice model with the 2 additional catgorical variables, I think I may have jumped to variable selection too quickly. If I had to do it again, I would have dived deeper into checking correlations before variables selection.
+
+However, after all, the model seems fairly feasible as I can fully imagine that due to publicity users may give extra points if they know that a movie has been nominated for an Oscar. Also, it for instance sounds feasible that Documentaries get extra points, as opposed to Horror scoring lower on average.

@@ -1,0 +1,344 @@
+---
+title: "Exploring the BRFSS data by Erik"
+output: 
+  html_document: 
+    fig_height: 4
+    highlight: pygments
+    theme: spacelab
+---
+
+### Load packages
+First of all, I have to load the data, and the specific packages that we have been using in this course (as instructed).
+
+```{r load-packages, message = FALSE}
+library(ggplot2)
+library(dplyr)
+```
+
+```{r load-data}
+load("brfss2013.RData")
+```
+
+
+
+* * *
+
+## Part 1: Data
+
+The Behavioral Risk Factor Surveillance System (BRFSS) is a system of health-related telephone surveys that collect state data about U.S. residents regarding their health-related risk behaviors, chronic health conditions, and use of preventive services. Established in 1984 with 15 states, BRFSS now collects data in all 50 states as well as the District of Columbia and three U.S. territories. BRFSS completes more than 400,000 adult interviews each year.States 
+are required to conduct at least 2,500 interviews for each of the versions of the questionnaire in order to have enough responses for weighting purposes.
+
+I assume that states are adopting a random sampling approach, which means that data is generalizable. However, since that data are observational, only correlations can be found among the data. There are no random assignment of tests between treatment groups and control groups, which means causal relations cannot be established.
+
+The dimensions of the data are that there are 491775 observations (interviews) in the data on 330 variables. Most of these variables are answers to survey questions, but there are also computated variables.
+
+```{r}
+dim(brfss2013)
+```
+
+* * *
+
+## Part 2: Research questions
+
+**Research quesion 1:**
+Is metal health related to Body Mass Index?
+
+I chose metal health, as overweight is obviously related to physical health. However, I think it is interesting to also find out what the mental relation is.
+
+The variables that I will investigate are:
+
+-menthlth: number of days mental health not good in the past 30 days. The exact survey question was: Now thinking about your mental health, which includes stress, depression, and problems with emotions, for how many days during the past 30 days was your mental health not good?
+
+-X_bmi5cat: this is computated variable based on height and weight of a person
+
+**Research quesion 2:**
+What is the effect on the amount of sleep per day on general health? Are there differences among gender?
+
+I was interested in this question, as I think many people just don't get enough sleep as they are too busy with work, household etc.
+
+The variables that I will investigate are:
+
+- sleptime1: How much do you sleep?
+
+- genhlth: Would you say that in general your health is....(categories)
+
+- sex: male/female
+
+**Research quesion 3:**
+What is the relation between education level and people eating fruit and vegetables?
+
+I chose this as I think that people with a higher education pay more attention to healthy eating.
+
+The variables that I will investigate are:
+
+- educa. Education level. This is a factoral variable with 6 levels.
+
+- x_frtlt1.This is a computated variable, and calculates if people eat fruit at least once a day.
+
+- x-veglt1. This is also a computed variable, and calcultes if people eat vegetables at least once a day.
+
+* * *
+
+## Part 3: Exploratory data analysis
+
+
+**Research quesion 1:The relation between BMI and Mental Health**
+
+First of all, I want to look at data types and the responses of the Body Mass Index variable.
+
+```{r}
+str(brfss2013$X_bmi5cat)
+```
+```{r}
+brfss2013 %>%
+  group_by(X_bmi5cat) %>%
+  summarise(count=n())
+```
+
+So the X_bmi5cat is a factor variable, and it is also ordinal. It has actually 4 categories, and I will need to filter out the NA's.
+
+Now, I also want to investigate the Mental Health variable.
+
+```{r}
+str(brfss2013$menthlth)
+```
+
+Mental Health is an integer variable. Since Mental Health comprises many more different responses, I thought it is visually a much better idea to use a histogram to investigate the responses. However, before I do so, I find need to check for bad data. Since the survey question inquires about the mental health status over the past 30 days, any answers outside the 0-30 range should not be considered. As I also want to see if there are NA's, I added selecting NA's to the filter.
+
+```{r}
+brfss2013 %>%
+  group_by(menthlth) %>%
+  summarise(count=n()) %>%
+  filter(menthlth>30|menthlth<0|is.na(menthlth))
+```
+
+As you can see, there are 2 values recorded that make no sense, and need to be excluded from the analysis, together with the NA's. First of all, I am going to calculated basic statistics with the values mentioned excluded.
+
+```{r}
+brfss2013 %>%
+  filter(!(is.na(menthlth)|menthlth>30)) %>%
+  summarise(median_mh = median(menthlth), mean_mh = mean(menthlth), sd_mh = sd(menthlth), n = n())
+```
+
+If I check the (n), I can see that indeed the 8629 values that I wanted to excluded are excluded indeed. Also, since the median is 0, at least half of the people report no days of mental illness (as expected). However, I actually only want to see the people who reported some mental illness. Therefore, I am also going to filter out the 0-days values, and look at the results in a histogram.As this did not work properly by filtering and chaining data to the histogram, I made a copy of the dataframe with clean data first.
+
+```{r}
+clean_mh <- brfss2013 %>%
+  filter(!(is.na(menthlth)|menthlth>30|menthlth==0)) 
+ggplot(data = clean_mh, aes(x=menthlth)) +
+  geom_histogram(binwidth=1)
+```
+
+The result is clearly not a normal distribution, with many people reporting mental illness a few days, and a lot of people reporting feeling mentally ill all 30 days (that's actually the mode now). Below, I am calculating the statistics with the 0 values excluded. As you can see, the median is now 5 days, and the people reporting any days of mental illness is about 30% of the sample (148685/491775)
+
+```{r}
+clean_mh %>%
+summarise(median_mh = median(menthlth), mean_mh = mean(menthlth), sd_mh = sd(menthlth), n = n())
+```
+
+The last thing that I want to do is to investigate the correlation (if there is one) with the 4 BMI categories in a box plot. However, in order to do so, I first have to also clean the NA category in the BMI variable. What I am doing below is to overwrite clean_mh again, and this time only select the cleaned variables mental health and BMI.
+
+```{r}
+clean_mh <- select(brfss2013,menthlth,X_bmi5cat) %>%
+  filter(!(is.na(menthlth)|menthlth>30|menthlth==0|is.na(X_bmi5cat))) 
+```
+
+```{r}
+ggplot(clean_mh, aes(x = X_bmi5cat, y = menthlth)) +
+  geom_boxplot()
+```
+
+As you can see, the categoriess reporting more mental illness days are actually Obese and Underweight. People with a normal weight and even overweight seem to have more severe issues if they have any issues (>0 days mental illness). The IQR and Median of Obese and Underweight are very similar (same for normal and overweight). I cannot say anything about the statistical significance of these results yet, but I am sure that we are going to learn about this in the next course.
+
+Update: I later realised that the analysis above only shows the severeness of issues. However, the answer to the research question also asks for a view of the proportions reporting issues versus no issues at all. Therefore, I also wanted to compose a bar chart that shows this. First, I create a dataframe that includes the 0-days responses again. Then, I created a variable "health", which can take the values healthy (0-days) or issues (>0 days). The graph shows that Obese and Underweight people also report more issues (smaller % of people with 0-days of mental illness).
+
+```{r}
+clean_mhw0 <- select(brfss2013,menthlth,X_bmi5cat) %>%
+  filter(!(is.na(menthlth)|menthlth>30|is.na(X_bmi5cat))) 
+```
+
+```{r}
+clean_mhw0 <- clean_mhw0 %>%
+  mutate(health=ifelse(menthlth==0,"healthy","issues"))
+```
+
+```{r}
+ggplot(data = clean_mhw0, aes(x = X_bmi5cat, fill = health)) +
+  geom_bar(position="fill")
+```
+
+
+**Research quesion 2: Sleep and general health**
+
+What is the effect on the amount of sleep per day on general health? Are there differences among gender?
+
+Again, I first want to find out what data types and responses I am dealing with. General health is a factoral and ordinal variable with 5 categories.
+
+```{r}
+str(brfss2013$genhlth)
+```
+
+Below, you can see that there are no starnge responses, and that I will only need to exclude the NAs in my analysis.
+```{r}
+brfss2013 %>%
+  group_by(genhlth) %>%
+  summarise(count=n())
+```
+
+Secondly, I also want to investigate sleptim1. As can be expected, Slept time is an integer, and should not exceed 24 hours a day.
+
+```{r}
+str(brfss2013$sleptim1)
+```
+
+Similar to what I did in the 1st research question, I first want to find out if there are any clearly impossible answers recorded (in this case >24 hours/day) and also see if there are any NAs.
+
+```{r}
+brfss2013 %>%
+  group_by(sleptim1) %>%
+  summarise(count=n()) %>%
+  filter(sleptim1<0|sleptim1>24|is.na(sleptim1))
+```
+
+As you can see, the 103 and 450 hours a day are clearly mistakes/bad data. I now want to plot the feasible data in a histogram. To realize this, I am first making a new dataframe.
+
+```{r}
+cleansleep <- brfss2013 %>%
+  filter(!(is.na(sleptim1)|sleptim1>24)) 
+ggplot(data = cleansleep, aes(x=sleptim1)) +
+  geom_histogram(binwidth=1)
+```
+
+As you can see, the time slept per night is symmetrical and seems normally distributed at first sight.Below, I have calculated the basic statistics.
+
+```{r}
+cleansleep %>%
+summarise(median_s = median(sleptim1), mean_s = mean(sleptim1), sd_s = sd(sleptim1), n = n())
+```
+
+I also computed the statistics using the general health categories as groups. As you can see, there seems to be a correlation with the mean by category (more sleep means better general health). 
+
+```{r}
+cleansleep %>%
+group_by(genhlth) %>%
+filter(!(is.na(genhlth))) %>% 
+summarise(median_s = median(sleptim1), mean_s = mean(sleptim1), sd_s = sd(sleptim1), n = n())
+```
+
+In order to visualize this, I tried the boxplot again. However, The boxplot was not very helpful, as it displays mediums instead of means. Therfore, I tried a different graph. However, since the diferences in the means are tiny, this visualization didn't add much either.
+
+The additional question that I asked myself was if the is a difference among gender. First, I created a dataframe in which I only keep the general health categories (and exclude the NAs), and the sleeping time data (which is already cleaned in cleansleep), and sex (male/female, excluding the NAs). 
+
+```{r}
+cleanstats <-select(cleansleep,genhlth,sleptim1,sex) %>%
+filter(!(is.na(genhlth)|is.na(sex)))
+```
+
+The first thing that I did was to check was if there is a difference in hours of sleep between males and females. As you can see below, the are hardly any differences in the statistics.
+
+```{r}
+cleanstats %>%
+  group_by(sex) %>%
+  summarise(median_s = median(sleptim1), mean_s = mean(sleptim1), sd_s = sd(sleptim1), n = n())
+```
+
+Lastly, I also checked if mapping sex and general health would show any significant differences. However, as you can see below the patterns are the same. For both males and females there seems to be some correlation between general health and amount of sleep. The only difference is that the correlation seems to be a little stronger among women (excellent: a little more sleep than man, poor: a little less sleep than men).
+
+```{r}
+cleanstats %>%
+  group_by(genhlth,sex) %>%
+  summarise(median_s = median(sleptim1), mean_s = mean(sleptim1), sd_s = sd(sleptim1), n = n())
+```
+
+
+
+**Research quesion 3: Relation between education and fruit and vegetables consumption**
+
+First of all, I am checking the structure and values of the variables that I have chosen to investigate. These are:
+- educa. Education level. This is a factoral variable with 6 levels.
+- x_frtlt1.This is a computated variable, and calculates if people eat fruit at least once a day.
+- x-veglt1. This is also a computed variable, and calcultes if people eat vegetables at least once a day.
+
+```{r}
+str(brfss2013$educa)
+```
+
+```{r}
+brfss2013 %>%
+  group_by(educa) %>%
+  summarise(count=n())
+```
+
+```{r}
+str(brfss2013$X_frtlt1)
+```
+
+```{r}
+brfss2013 %>%
+  group_by(X_frtlt1) %>%
+  summarise(count=n())
+```
+
+
+```{r}
+str(brfss2013$X_veglt1)
+```
+
+```{r}
+brfss2013 %>%
+  group_by(X_veglt1) %>%
+  summarise(count=n())
+```
+
+As you can see, there are no strange values/bad data, and I only need to filter out the NAs per category. I order to make start my analysis with only clean data, and only the variables that I need, I am copying those 3 variables into a new dataframe, and filter out the NAs. As you can see, I lost about 32.500 interview with NAs (I think there is a lot of overlap between missing fruits and missing vegetables data).
+
+```{r}
+q3clean <- select(brfss2013, educa, X_frtlt1, X_veglt1) %>%
+filter(!(is.na(educa)|is.na(X_frtlt1)|is.na(X_veglt1)))
+dim(q3clean)
+```
+
+Unfortunately, I could not find out how to use the factorial values ([1] ect) in the ifelse statements, so for the time being, I am going to create new variables using the descriptions.
+
+```{r}
+q3clean <- q3clean %>%
+  mutate(both=ifelse((X_veglt1=="Consumed vegetables one or more times per day" & X_frtlt1=="Consumed fruit one or more times per day"),"both","no"))
+```
+
+```{r}
+q3clean <- q3clean %>%
+  mutate(none=ifelse((X_veglt1!="Consumed vegetables one or more times per day" & X_frtlt1!="Consumed fruit one or more times per day"),"none","no"))
+```
+
+```{r}
+q3clean <- q3clean %>%
+  mutate(fruit=ifelse((X_veglt1!="Consumed vegetables one or more times per day" & X_frtlt1=="Consumed fruit one or more times per day"),"fruit_only","no"))
+```
+
+```{r}
+q3clean <- q3clean %>%
+  mutate(vegt=ifelse((X_veglt1=="Consumed vegetables one or more times per day" & X_frtlt1!="Consumed fruit one or more times per day"),"vegt_only","no"))
+```
+
+So, now I have created 4 additional variables, and the values should be mutually exclusive (either eating both, neither, fruit only, or vegetables only). As you can see below, most people eat both or vegetables only.
+
+```{r}
+q3clean %>%
+  group_by(both,none,fruit,vegt) %>%
+  summarise(count=n())
+```
+
+Below, you can see that especially college graduates eat both more often (I had to search for a way to make the x-axis readable by the way...).
+
+```{r}
+ggplot(data = q3clean, aes(x = educa, fill = both)) +
+  geom_bar(position="fill")+ theme(axis.text.x = element_text(angle = 25, hjust = 1))
+```
+
+The last thing that I wanted to do, is the same thing for people who don't eat either (I have made my life hard enough already ;-)). This picture is pretty similar to the previous one, with the "worst performance" in the "some highschool" category, and college graduates performing best (almost all eat some fruit or vegetables.)
+
+```{r}
+ggplot(data = q3clean, aes(x = educa, fill = none)) +
+  geom_bar(position="fill")+ theme(axis.text.x = element_text(angle = 25, hjust = 1))
+```
+

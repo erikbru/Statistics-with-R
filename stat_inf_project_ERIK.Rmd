@@ -1,0 +1,262 @@
+---
+title: "Statistical inference with the GSS data by Erik"
+output: 
+  html_document: 
+    fig_height: 4
+    highlight: pygments
+    theme: spacelab
+---
+
+## Setup
+
+### Load packages
+
+First, I am loading the packages as instructed.
+
+```{r load-packages, message = FALSE}
+library(ggplot2)
+library(dplyr)
+library(statsr)
+```
+
+### Load data
+
+I also need to load the data, which are already prepared for analysis.
+```{r load-data}
+load("gss.Rdata")
+```
+
+
+
+* * *
+
+## Part 1: Data
+
+Since 1972, the General Social Survey (GSS) has been monitoring societal change and studying the growing complexity of American society. The GSS aims to gather data on contemporary American society in order to monitor and explain trends and constants in attitudes, behaviors, and attributes; to examine the structure and functioning of society in general as well as the role played by relevant subgroups; to compare the United States to other societies in order to place American society in comparative perspective and develop cross-national models of human society; and to make high-quality data easily accessible to scholars, students, policy makers, and others, with minimal cost and waiting.
+
+GSS questions cover a diverse range of issues including national spending priorities, marijuana use, crime and punishment, race relations, quality of life, confidence in institutions, and sexual behavior. 
+
+The study uses random sampling, and hence results are generalizable. However, there are a few concerns. For instance, I came across the following: "Until 2006 the GSS only sampled the English speaking population. As defined for the GSS in 1983-1987, 98% of the adult, 
+household population is English speaking.  The number of non-English speakers excluded is indicated in Table A.8.  Spanish speakers typically make up 60-65% of the language exclusions.  About a dozen languages make up the remaining exclusions. Starting in 2006 the GSS samples Spanish speakers in addition to English speakers.". My conclusion is that there is some bias, but I assume random sampling as the study still covered 98% of the population
+
+The study is observational, and therefore no experiments with random sampling were used. As a consequence, no causal conclusions can be made.
+
+* * *
+
+## Part 2: Research question
+
+Especially after recent incidents with shooting (orlando nightclub and on schools) and the recent elections in the US, I think resistence against the right of citizens to own a gun is rising among certain groups of the population. Therefore, I want to compare gunowership over time. I will use the most recent year in the data (2012) and compare the percentage of gunowners with the percentage of gunowners in the year 2000 (arbitrarily chosen, but a while back). I will only use the "owngun" variable (Yes/No), and not look at more detailed follow-up questions. In summary, my hypothesis will be:
+
+Has gunownership in the US increased in the period 2000-2012 or not?
+
+* * *
+
+## Part 3: Exploratory data analysis
+
+The variables that I need for my inference test are " year", and "owngun". As you can see below, owngun is actually a 3 levels factorial variable (not ordinal). At first glance, there are lots of observations available and it seems reasonable that after selecting years enough observations will remain to assume near normality of the sampling distribution.
+
+
+```{r}
+str(gss$owngun)
+```
+
+```{r}
+summary(gss$owngun)
+```
+
+"Year" is actually an integer variable. This is something to keep in mind, as for the analysis I will have to treat it as a factor.
+
+```{r}
+str(gss$year)
+```
+
+Below, I am creating a subset of the data, in which I only keep the 2000 (00) and 2012 (12) data.
+
+```{r}
+gun0012 <- subset(gss, year==2000|year==2012, select=c(year,owngun))
+summary(gun0012)
+```
+
+Now, I am getting rid of the "Refused" observations. This also cleans up the NA's
+
+```{r}
+cleangun0012 <- gun0012%>%
+  filter(owngun!="Refused")
+summary(cleangun0012)
+```
+
+As you can also see above, the numeric statistics about the year variable make no sense for my comparison. It will also mess up any graph I want to make. Therefore, I am converting "year" to a factor variable.
+
+```{r}
+cleangun0012$year <- as.factor(cleangun0012$year)
+str(cleangun0012$year)
+```
+
+Figure 1 below, visualizes the reponses. There are more responses in 2000, but this does not matter as I will compare the percentage (Figure 2). The counts for each category range from 440-1231, and are more than enough to assume normality of the sampling distribution.
+
+```{r}
+ggplot(data=cleangun0012, aes(x=year, fill=owngun))+
+  geom_bar(width=0.5)+
+  ggtitle("Figure 1: Gun owners in the US")+
+  ylab("number of sample respondents")+
+  stat_count(aes(y=..count.., label=..count..), geom="text", vjust=5)
+```
+
+```{r}
+ggplot(data=cleangun0012, aes(x=year, fill=owngun))+
+  geom_bar(width=0.5, position="fill")+
+  ggtitle("Figure 2: Proportion of gun owners in the US")+
+  ylab("proportion of sample respondents")
+```
+
+As you just about see, the percentage of "yes" is slightly higher in 2012. In order to get a starting point for my inference tests, I am first going to calculate the "p_hat's" for both 2000 and 2012. As you can see below, the is an increase in the sample p_hat's of about 1,4% (32.9-34.3).
+
+```{r}
+p_hat_2000 <- cleangun0012 %>%
+  filter(year==2000)
+p_hat_2000 %>%  
+group_by(owngun) %>%
+  summarise(a=n(),b=a/nrow(p_hat_2000))
+```
+
+```{r}
+p_hat_2012 <- cleangun0012 %>%
+  filter(year==2012)
+p_hat_2012 %>%  
+group_by(owngun) %>%
+  summarise(a=n(),b=a/nrow(p_hat_2012))
+```
+
+
+* * *
+
+## Part 4: Inference
+
+First of all, I have some cleaning up to do. Although, I got rid of the data with "Refused" as the answer, the level still exists.
+
+```{r}
+str(cleangun0012$owngun)
+```
+
+As you can see below, I managed to get rid of the now unused level Refused by using the droplevels function.
+
+```{r}
+cleangun0012 <- droplevels(cleangun0012)
+```
+```{r}
+str(cleangun0012$owngun)
+```
+
+Now, I am fully set to start my inference tests. I do have 2 categorical values with 2 levels (year; 2000 and 2012, and owngun; yes and no).
+
+### Hypothesis test
+
+As gunownership seems to have increased base on the p_hat's, my hypothesis will be:
+
+H(0): p(2012)=p(2000)
+
+H(A): p(2012)>p(2000)
+
+In this hypothesis "p" stands for the true population proportion that owned guns in the respective years. Before, I do any test, I first have to check the conditions.
+
+1. Is the sample size less than 10% of the population? Yes, the sample size are certainly less than 10% of the population. 
+
+2. Independence. Since random sampling is used and the sample size is less than 10% of the population, I can assume independence within groups. There is also independence between groups as the groups are not paired (the observations were not from the same people).
+
+2. To check the succes-failure conditions (np>=10, and n(1-p)>=10) I will have to worked with the pooled proportions(the expected counts). P(pool)=(total successed/total n). A succes is defined as a "Yes" answer, and all numbers are available in Figure 1 of the exploratory data analysis.
+
+```{r}
+p_pool <- (603+440)/(1834+1281)
+p_pool
+```
+
+Now, I need to check the succes-failure condition for both years. n(2012)=1281. This leads to:
+
+1. expected number of successes: 0.33*1281= 423, which is way more than the required 10.
+
+2. expected number of failures: 1281*(1-0.33)= 858, which is also way more than 10.
+
+Since n(2000) is higher than n(2012) I know that these numbers will be higher than the ones calculated for 2012. Therefore, I can conclude that the succes-failures conditions are met. I can assume a near normal distribution of the sampling distribution.
+
+To execute the hypothesis test, I can use the inference function with method " theoretical" since all conditions are met (I don't have to simulate as there are enough successes and failures). As I am checking the hypothesis that p(2012)=p(2000), the null value is 0 (there is no difference).
+
+```{r}
+inference(y=owngun, x=as.factor(year), null=0, data=cleangun0012, statistic = "proportion", type="ht", method="theoretical", success = "Yes", alternative = "greater", order=c('2012','2000') )
+```
+
+The conlusion is: **As the p-value of this test is 0.19, I do not reject H(0) at a 5% significance level. This means that statistically, there is not sufficient evidence against the null hypothesis, and we cannot reject the hypothesis that p(2012)=p(2000). Differences are assumed to have happened by chance.**
+
+By the way, the p_hats shown are exactely the ones that I calculated in the exploratory data analysis, so I did that well ;-).
+
+Although my Hypothesis test is already done, I also wanted to calculate the z-score and associated p-value without the inference function. The z-score = (p_hat_2012-p_hat_2000)/SE. While I already have the p_hat values, I also need the Standard Error.
+
+```{r}
+se=sqrt((p_pool*(1-p_pool)/1281)+(p_pool*(1-p_pool)/1834))
+se
+```
+
+So now, I all the numbers that I need to calculate the z-score, and the associated z-score (one sided)
+
+```{r}
+z=(0.3435-0.3288)/se
+z
+pnorm(z, lower.tail=FALSE)
+```
+
+These figures all match perfectly (with some very small rounding diferences) with the z- and p-values that the inference functions calculated.
+
+### Condidence interval
+
+Since I am comparing two proportions, a confidence interval is also possible and I am required to do so. A condidence interval is always a point estimate + or - a Margin of Error. I am going to use a 95% confidence interval to estimate how the years 2012 and 2000 compare with regards to the percentage of gunowners.
+
+First of all, I have to check the conditions again. The checks for independence within and between groups are the same as those for the Hypothesis test. Since these were met, they also pass for the confidence interval (CI). The only thing that is different is the sample size/skew check, which is based on the observed proportions with a CI (instead of expected proportion with Hypothesis tests).
+
+Now, I need to check the succes-failure condition for both years. n(2012)=1281, and p_hat_2012=0.3435. This leads to:
+
+1. expected number of successes: 0.34*1281= 436, which is way more than the required 10.
+
+2. expected number of failures: 1281*(1-0.34)= 845, which is also way more than 10.
+
+For the year 2000, n(2000)=1834, and p_hat_2000=0.3288. This also leads to more than enough success and failures. Therefore, I can assume a near normal distribution of the sampling distribution.
+
+The point estimate for the diference between the proportions of 2012 and 2000 is:p_hat_2012-p_hat_2000
+
+```{r}
+p_point20122000 <- 0.3435-0.3288
+p_point20122000
+```
+
+The margin of error is z*standard error(p_hat_2012-p_hat_2000). As I want to compose a 95% confidence interval, I have to look up the z-score that corresponds to a 95% confidence interval. As a confidence interval is always two-sided, I have to split the uncertainty (1-0.95)/2 (2.5% uncertainty on both tails) 
+
+```{r}
+z_ci <- qnorm(0.975)
+z_ci
+```
+
+The last thing that I need is the Standard Error, which is based on the Observed sample proportions with a CI (p_hat's instead of p_pool (expected sample proportions) with hypothesis tests).
+
+```{r}
+se_ci=sqrt((0.3435*(1-0.3435)/1281)+(0.3288*(1-0.3288)/1834))
+se_ci
+```
+
+Now, I am ready to calculate the lower and upper bounds of the CI (the point estimate + or - the Margin of Error (which is z*Standard Error)).
+
+```{r}
+ci_lower <- p_point20122000 - z_ci*se_ci
+ci_higher <- p_point20122000 + z_ci*se_ci
+ci_lower
+ci_higher
+```
+
+The conclusion is: **We are 95% confident that the proportion of US citizens owing a gun in 2012 is between 2% lower and 5% higher than the proportion of US citizens owning a gun in 2000.**
+
+I also did the CI test using the inference function (CI confidence level unspecified leads to a default of 95%), and the results are exactly the same.
+
+```{r}
+inference(y=owngun, x=as.factor(year), data=cleangun0012, statistic = "proportion", type="ci", method="theoretical", success = "Yes", order=c('2012','2000') )
+```
+
+### Do the conclusions of the Hypothesis test and the Confidence Interval match?
+
+Yes, they do! The hypothesis test had an alpha of 5%. This corresponds to a 95% CI (they add up to 1). Since we failed to reject the Null Hypothesis, the CI should include the Null Value (0). The CI includes the value 0 indeed (roughly -0.02 till +0.05).
